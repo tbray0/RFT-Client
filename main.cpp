@@ -1,11 +1,8 @@
 #include <iostream>
 #include <fstream>
 #include <sys/socket.h>
-#include <system_error>
 #include <unistd.h>
 #include <array>
-#include <chrono>
-
 #include "timerC.h"
 #include "unreliableTransport.h"
 #include "logging.h"
@@ -70,12 +67,12 @@ int main(int argc, char* argv[]) {
 
         // Setup the Go-Back-N window
         std::array<datagramS, WINDOW_SIZE> sndpkt;
-        uint16_t base = 0;  // Oldest unacknowledged packet
-        uint16_t nextseqnum = 0; // Sequence number for the next packet
+        uint16_t base = 1;  // Oldest unacknowledged packet
+        uint16_t nextseqnum = 1; // Sequence number for the next packet
         bool allSent = false, allAcked = false;
 
         while (!allAcked) {
-            // 1. Send packets if there's space in the window and data to send
+            // Start state (A): sending packets if space is available in the window
             while (nextseqnum < base + WINDOW_SIZE && !allSent) {
                 datagramS packet{};
                 inputFile.read(packet.data, MAX_PAYLOAD_LENGTH);
@@ -87,11 +84,13 @@ int main(int argc, char* argv[]) {
                 if (packet.payloadLength > 0) {
                     connection.udt_send(packet);
                     sndpkt[packet.seqNum] = packet; // Store the packet in the window
-                    nextseqnum++;  // Increment nextseqnum
                     DEBUG << "Sent packet with seqNum: " << packet.seqNum << ENDL;
+                    if (base == nextseqnum) {
+                        timer.start();  // Start the timer for the first unacknowledged packet
+                    }
+                    nextseqnum++;  // Increment nextseqnum
                 } else {
                     allSent = true; // No more data to send, mark allSent
-                    // Send an empty packet to signal end of transmission
                     packet.payloadLength = 0;
                     packet.seqNum = nextseqnum % WINDOW_SIZE;
                     packet.checksum = computeChecksum(packet);
@@ -100,14 +99,21 @@ int main(int argc, char* argv[]) {
                     nextseqnum++;
                     DEBUG << "Sent final empty packet with seqNum: " << packet.seqNum << ENDL;
                 }
+            }
 
-                // Start the timer if it's the first unacknowledged packet
-                if (base == nextseqnum - 1) {
-                    timer.start();
+            // 2. Timeout handling (retransmit unacknowledged packets)
+            if (timer.timeout()) {
+                DEBUG << "Timeout expired. Resending packets from seqNum: " << base << ENDL;
+                timer.start(); // Restart the timer
+
+                // Resend all packets from base to nextseqnum-1
+                for (uint16_t i = base; i != nextseqnum; i = (i + 1) % WINDOW_SIZE) {
+                    connection.udt_send(sndpkt[i]);
+                    DEBUG << "Resent packet with seqNum: " << sndpkt[i].seqNum << ENDL;
                 }
             }
 
-            // 2. Check for ACKs from the server
+            // 3. Receiving acknowledgments (ACK)
             datagramS ackPacket{};
             ssize_t bytesReceived = connection.udt_receive(ackPacket);
             if (bytesReceived > 0) {
@@ -116,34 +122,18 @@ int main(int argc, char* argv[]) {
                     uint16_t ackNum = ackPacket.ackNum % WINDOW_SIZE; // Use modulo for wrapping
                     DEBUG << "Received ACK for seqNum: " << ackNum << ENDL;
 
-                    // Slide the window if the ackNum is within range
-                    if ((ackNum - base + WINDOW_SIZE) % WINDOW_SIZE < WINDOW_SIZE) {
-                        base = (ackNum + 1) % WINDOW_SIZE;
-                        if (base == nextseqnum) {
-                            timer.stop();  // Stop the timer when all packets are acknowledged
-                        } else {
-                            timer.start(); // Restart the timer for the new base
-                        }
-                    }
+                    // Update base with the new acknowledgment
+                    base = (ackNum + 1) % WINDOW_SIZE;
 
-                    // If all data sent and acknowledged, we're done
-                    if (allSent && base == nextseqnum) {
+                    // If all data has been acknowledged, stop
+                    if (base == nextseqnum) {
                         allAcked = true;
+                        timer.stop(); // Stop the timer once all packets are acknowledged
+                    } else {
+                        timer.start(); // Restart the timer if there's still unacknowledged data
                     }
                 } else {
                     WARNING << "Received corrupted ACK packet." << ENDL;
-                }
-            }
-
-            // 3. Check for timer expiration
-            if (timer.timeout()) {
-                DEBUG << "Timer expired. Resending packets from seqNum: " << base << ENDL;
-                timer.start(); // Restart the timer
-
-                // Resend all packets in the window
-                for (uint16_t i = base; i != nextseqnum; i = (i + 1) % WINDOW_SIZE) {
-                    connection.udt_send(sndpkt[i]);
-                    DEBUG << "Resent packet with seqNum: " << sndpkt[i].seqNum << ENDL;
                 }
             }
         }
@@ -170,5 +160,6 @@ int main(int argc, char* argv[]) {
         FATAL << "Error: " << e.what() << ENDL;
         return 1;
     }
+
     return 0;
 }
