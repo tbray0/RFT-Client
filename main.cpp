@@ -9,7 +9,7 @@
 #include "datagram.h"
 
 #define WINDOW_SIZE 10
-#define TIMEOUT 50  // Timeout duration in milliseconds
+#define TIMEOUT 1000  // Timeout duration in milliseconds
 
 int main(int argc, char* argv[]) {
     // Defaults
