@@ -70,8 +70,8 @@ int main(int argc, char* argv[]) {
 
         // Setup the Go-Back-N window
         std::array<datagramS, WINDOW_SIZE> sndpkt;
-        uint16_t base = 0; // Oldest unacknowledged packet
-        uint16_t nextseqnum = 0;
+        uint16_t base = 1; // Oldest unacknowledged packet
+        uint16_t nextseqnum = 1;
         bool allSent = false, allAcked = false;
 
         while (!allAcked) {
