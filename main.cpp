@@ -80,7 +80,7 @@ int main(int argc, char* argv[]) {
                 datagramS packet{};
                 inputFile.read(packet.data, MAX_PAYLOAD_LENGTH);
                 packet.payloadLength = inputFile.gcount();
-                packet.seqNum = nextseqnum % WINDOW_SIZE + 1; // Use modulo for wrapping
+                packet.seqNum = nextseqnum % WINDOW_SIZE; // Use modulo for wrapping
                 packet.checksum = computeChecksum(packet);
 
                 // Send packet if there's data to send
