@@ -87,10 +87,9 @@ int main(int argc, char* argv[]) {
                     connection.udt_send(packet);
                     sndpkt[packet.seqNum] = packet; // Store packet using wrapped seqNum
                     nextseqnum++;
-                    DEBUG << "Sent packet with seqNum: " << packet.seqNum << ENDL;
+                    DEBUG << "Sent packet with seqNum: " << packet.seqNum << " (payload length: " << packet.payloadLength << ")" << ENDL;
                 } else {
-                    allSent = true; // No more data to send, mark allSent
-                    // Send an empty packet to signal end of transmission
+                    // Send final empty packet to signal end of transmission
                     packet.payloadLength = 0;
                     packet.seqNum = nextseqnum % WINDOW_SIZE;
                     packet.checksum = computeChecksum(packet);
@@ -98,6 +97,7 @@ int main(int argc, char* argv[]) {
                     sndpkt[packet.seqNum] = packet;
                     nextseqnum++;
                     DEBUG << "Sent final empty packet with seqNum: " << packet.seqNum << ENDL;
+                    allSent = true;
                 }
 
                 // Start the timer if it's the first unacknowledged packet
@@ -143,7 +143,7 @@ int main(int argc, char* argv[]) {
             }
         }
 
-        // Final step: Ensure the last ACK for the empty packet is received (even if the server says this isn't necessary)
+        // Final step: Ensure the last ACK for the empty packet is received
         bool lastAckReceived = false;
         while (!lastAckReceived) {
             datagramS ackPacket{};
