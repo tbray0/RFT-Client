@@ -70,7 +70,7 @@ int main(int argc, char* argv[]) {
 
         // Setup the Go-Back-N window
         std::array<datagramS, WINDOW_SIZE> sndpkt;
-        uint16_t base = 1; // Oldest unacknowledged packet
+        uint16_t base = 0; // Oldest unacknowledged packet
         uint16_t nextseqnum = 1;
         bool allSent = false, allAcked = false;
 
@@ -93,7 +93,7 @@ int main(int argc, char* argv[]) {
                     allSent = true; // No more data to send, mark allSent
                     // Send an empty packet to signal end of transmission
                     packet.payloadLength = 0;
-                    packet.seqNum = nextseqnum % WINDOW_SIZE + 1;
+                    packet.seqNum = nextseqnum % WINDOW_SIZE;
                     packet.checksum = computeChecksum(packet);
                     connection.udt_send(packet);
                     sndpkt[packet.seqNum] = packet;
