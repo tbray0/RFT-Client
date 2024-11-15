@@ -97,6 +97,7 @@ int main(int argc, char* argv[]) {
                     connection.udt_send(packet);
                     sndpkt[packet.seqNum] = packet;
                     nextseqnum++;
+                    DEBUG << "Sent final empty packet with seqNum: " << packet.seqNum << ENDL;
                 }
 
                 // Start the timer if it's the first unacknowledged packet
@@ -138,6 +139,20 @@ int main(int argc, char* argv[]) {
                 for (uint16_t i = base; i != nextseqnum; i = (i + 1) % WINDOW_SIZE) {
                     connection.udt_send(sndpkt[i]);
                     DEBUG << "Resent packet with seqNum: " << sndpkt[i].seqNum << ENDL;
+                }
+            }
+        }
+
+        // Final step: Ensure the last ACK for the empty packet is received (ed discussion post said this isn't needed but I was having issues)
+        bool lastAckReceived = false;
+        while (!lastAckReceived) {
+            datagramS ackPacket{};
+            ssize_t bytesReceived = connection.udt_receive(ackPacket);
+            if (bytesReceived > 0 && validateChecksum(ackPacket)) {
+                uint16_t ackNum = ackPacket.ackNum % WINDOW_SIZE;
+                if (ackNum == (nextseqnum - 1) % WINDOW_SIZE) {
+                    DEBUG << "Received final ACK for seqNum: " << ackNum << ENDL;
+                    lastAckReceived = true;
                 }
             }
         }
