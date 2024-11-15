@@ -64,9 +64,9 @@ int main(int argc, char* argv[]) {
         // Initialize unreliable transport connection
         unreliableTransportC connection(hostname, portNum);
 
-        // Initialize the timer
+        // Initialize the timer with the given duration
         timerC timer = timerC();
-        timer.setDuration(TIMEOUT);
+        timer.setDuration(TIMEOUT); // Set the timer duration to 50 ms
 
         // Setup the Go-Back-N window
         std::array<datagramS, WINDOW_SIZE> sndpkt;
@@ -88,9 +88,10 @@ int main(int argc, char* argv[]) {
                     connection.udt_send(packet);
                     sndpkt[packet.seqNum] = packet; // Store packet using wrapped seqNum
                     nextseqnum++;
-                    DEBUG << "Sent packet with seqNum: " << packet.seqNum << " (payload length: " << packet.payloadLength << ")" << ENDL;
+                    DEBUG << "Sent packet with seqNum: " << packet.seqNum << ENDL;
                 } else {
-                    // Send final empty packet to signal end of transmission
+                    allSent = true; // No more data to send, mark allSent
+                    // Send an empty packet to signal end of transmission
                     packet.payloadLength = 0;
                     packet.seqNum = nextseqnum % WINDOW_SIZE;
                     packet.checksum = computeChecksum(packet);
@@ -98,7 +99,6 @@ int main(int argc, char* argv[]) {
                     sndpkt[packet.seqNum] = packet;
                     nextseqnum++;
                     DEBUG << "Sent final empty packet with seqNum: " << packet.seqNum << ENDL;
-                    allSent = true;
                 }
 
                 // Start the timer if it's the first unacknowledged packet
