@@ -154,6 +154,8 @@ int main(int argc, char* argv[]) {
                     DEBUG << "Received final ACK for seqNum: " << ackNum << ENDL;
                     lastAckReceived = true;
                 }
+            } else {
+                WARNING << "Failed to receive valid ACK for the final packet. Retrying..." << ENDL;
             }
         }
 
