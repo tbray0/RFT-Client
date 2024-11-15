@@ -70,13 +70,13 @@ int main(int argc, char* argv[]) {
 
         // Setup the Go-Back-N window
         std::array<datagramS, WINDOW_SIZE> sndpkt;
-        uint16_t base = 0; // Oldest unacknowledged packet
-        uint16_t nextseqnum = 1;
+        uint16_t base = 0;  // Oldest unacknowledged packet
+        uint16_t nextseqnum = 0; // Sequence number for the next packet
         bool allSent = false, allAcked = false;
 
         while (!allAcked) {
             // 1. Send packets if there's space in the window and data to send
-            while (((nextseqnum - base + WINDOW_SIZE) % WINDOW_SIZE) < WINDOW_SIZE && !allSent) {
+            while (nextseqnum < base + WINDOW_SIZE && !allSent) {
                 datagramS packet{};
                 inputFile.read(packet.data, MAX_PAYLOAD_LENGTH);
                 packet.payloadLength = inputFile.gcount();
@@ -86,8 +86,8 @@ int main(int argc, char* argv[]) {
                 // Send packet if there's data to send
                 if (packet.payloadLength > 0) {
                     connection.udt_send(packet);
-                    sndpkt[packet.seqNum] = packet; // Store packet using wrapped seqNum
-                    nextseqnum++;
+                    sndpkt[packet.seqNum] = packet; // Store the packet in the window
+                    nextseqnum++;  // Increment nextseqnum
                     DEBUG << "Sent packet with seqNum: " << packet.seqNum << ENDL;
                 } else {
                     allSent = true; // No more data to send, mark allSent
@@ -102,7 +102,7 @@ int main(int argc, char* argv[]) {
                 }
 
                 // Start the timer if it's the first unacknowledged packet
-                if (base == (nextseqnum - 1) % WINDOW_SIZE) {
+                if (base == nextseqnum - 1) {
                     timer.start();
                 }
             }
@@ -117,13 +117,17 @@ int main(int argc, char* argv[]) {
                     DEBUG << "Received ACK for seqNum: " << ackNum << ENDL;
 
                     // Slide the window if the ackNum is within range
-                    if (((ackNum - base + WINDOW_SIZE) % WINDOW_SIZE) < WINDOW_SIZE) {
+                    if ((ackNum - base + WINDOW_SIZE) % WINDOW_SIZE < WINDOW_SIZE) {
                         base = (ackNum + 1) % WINDOW_SIZE;
-                        timer.start(); // Restart the timer for the new base
+                        if (base == nextseqnum) {
+                            timer.stop();  // Stop the timer when all packets are acknowledged
+                        } else {
+                            timer.start(); // Restart the timer for the new base
+                        }
                     }
 
                     // If all data sent and acknowledged, we're done
-                    if (allSent && base == (nextseqnum % WINDOW_SIZE)) {
+                    if (allSent && base == nextseqnum) {
                         allAcked = true;
                     }
                 } else {
