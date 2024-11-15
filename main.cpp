@@ -9,7 +9,7 @@
 #include "datagram.h"
 
 #define WINDOW_SIZE 10
-#define TIMEOUT 1000  // Timeout duration in milliseconds
+#define TIMEOUT 5000  // Timeout duration in milliseconds
 
 int main(int argc, char* argv[]) {
     // Defaults
@@ -67,41 +67,36 @@ int main(int argc, char* argv[]) {
 
         // Setup the Go-Back-N window
         std::array<datagramS, WINDOW_SIZE> sndpkt;
-        uint16_t base = 1;  // Oldest unacknowledged packet
-        uint16_t nextseqnum = 1; // Sequence number for the next packet
-        bool allSent = false, allAcked = false;
+        uint16_t base = 0;  // The first unacknowledged packet in the window
+        uint16_t nextseqnum = 0;  // The sequence number for the next packet to send
+        bool allAcked = false;
 
         while (!allAcked) {
-            // Start state (A): sending packets if space is available in the window
-            while (nextseqnum < base + WINDOW_SIZE && !allSent) {
+            // State A: sending packets if space is available in the window
+            while (nextseqnum < base + WINDOW_SIZE) {
                 datagramS packet{};
                 inputFile.read(packet.data, MAX_PAYLOAD_LENGTH);
                 packet.payloadLength = inputFile.gcount();
-                packet.seqNum = nextseqnum % WINDOW_SIZE; // Use modulo for wrapping
+                packet.seqNum = nextseqnum;  // Assign the sequence number to the packet
                 packet.checksum = computeChecksum(packet);
 
-                // Send packet if there's data to send
-                if (packet.payloadLength > 0) {
+                // Send packet if there is data to send
+                if (packet.payloadLength > 0 || nextseqnum == 10) {
+                    // Even if we reach seqNum 10, we should send it as the last packet
                     connection.udt_send(packet);
-                    sndpkt[packet.seqNum] = packet; // Store the packet in the window
+                    sndpkt[nextseqnum % WINDOW_SIZE] = packet; // Store the packet in the window
                     DEBUG << "Sent packet with seqNum: " << packet.seqNum << ENDL;
                     if (base == nextseqnum) {
                         timer.start();  // Start the timer for the first unacknowledged packet
                     }
                     nextseqnum++;  // Increment nextseqnum
                 } else {
-                    allSent = true; // No more data to send, mark allSent
-                    packet.payloadLength = 0;
-                    packet.seqNum = nextseqnum % WINDOW_SIZE;
-                    packet.checksum = computeChecksum(packet);
-                    connection.udt_send(packet);
-                    sndpkt[packet.seqNum] = packet;
-                    nextseqnum++;
-                    DEBUG << "Sent final empty packet with seqNum: " << packet.seqNum << ENDL;
+                    // If no data is left to send, just send the last packet with seqNum 10
+                    break; // Exit the loop
                 }
             }
 
-            // 2. Timeout handling (retransmit unacknowledged packets)
+            // Timeout handling (retransmit unacknowledged packets)
             if (timer.timeout()) {
                 DEBUG << "Timeout expired. Resending packets from seqNum: " << base << ENDL;
                 timer.start(); // Restart the timer
@@ -113,13 +108,13 @@ int main(int argc, char* argv[]) {
                 }
             }
 
-            // 3. Receiving acknowledgments (ACK)
+            // Receiving ACKs
             datagramS ackPacket{};
             ssize_t bytesReceived = connection.udt_receive(ackPacket);
             if (bytesReceived > 0) {
                 // Validate checksum
                 if (validateChecksum(ackPacket)) {
-                    uint16_t ackNum = ackPacket.ackNum % WINDOW_SIZE; // Use modulo for wrapping
+                    uint16_t ackNum = ackPacket.ackNum;
                     DEBUG << "Received ACK for seqNum: " << ackNum << ENDL;
 
                     // Update base with the new acknowledgment
@@ -144,8 +139,8 @@ int main(int argc, char* argv[]) {
             datagramS ackPacket{};
             ssize_t bytesReceived = connection.udt_receive(ackPacket);
             if (bytesReceived > 0 && validateChecksum(ackPacket)) {
-                uint16_t ackNum = ackPacket.ackNum % WINDOW_SIZE;
-                if (ackNum == (nextseqnum - 1) % WINDOW_SIZE) {
+                uint16_t ackNum = ackPacket.ackNum;
+                if (ackNum == 10) {
                     DEBUG << "Received final ACK for seqNum: " << ackNum << ENDL;
                     lastAckReceived = true;
                 }
