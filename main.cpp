@@ -12,7 +12,7 @@
 #include "datagram.h"
 
 #define WINDOW_SIZE 10
-#define TIMEOUT 1000  // Timeout duration in milliseconds
+#define TIMEOUT 50  // Timeout duration in milliseconds
 
 int main(int argc, char* argv[]) {
     // Defaults
@@ -65,7 +65,8 @@ int main(int argc, char* argv[]) {
         unreliableTransportC connection(hostname, portNum);
 
         // Initialize the timer
-        timerC timer(TIMEOUT);
+        timerC timer = timerC();
+        timer.setDuration(TIMEOUT);
 
         // Setup the Go-Back-N window
         std::array<datagramS, WINDOW_SIZE> sndpkt;
