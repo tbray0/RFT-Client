@@ -71,11 +71,11 @@ int main(int argc, char* argv[]) {
         std::array<datagramS, WINDOW_SIZE> sndpkt;
         uint16_t base = 0; // Oldest unacknowledged packet
         uint16_t nextseqnum = 0;
-        bool allSent = false, allAcked = false;
+        bool allAcked = false;
 
         while (!allAcked) {
             // 1. Send packets if there's space in the window and data to send
-            while (nextseqnum < base + WINDOW_SIZE && !allSent) {
+            while (nextseqnum < base + WINDOW_SIZE && !inputFile.eof()) {
                 datagramS packet{};
                 inputFile.read(packet.data, MAX_PAYLOAD_LENGTH);
                 packet.payloadLength = inputFile.gcount();
@@ -93,8 +93,6 @@ int main(int argc, char* argv[]) {
                     if (base == nextseqnum - 1) {
                         timer.start();
                     }
-                } else {
-                    allSent = true;
                 }
             }
 
@@ -109,12 +107,11 @@ int main(int argc, char* argv[]) {
                 if (ackNum >= base && ackNum < nextseqnum) {
                     base = ackNum + 1;
 
-                    // Stop the timer if all packets are acknowledged
-                    if (base == nextseqnum) {
-                        timer.stop();
-                    } else {
-                        // Restart the timer for the next unacknowledged packet
+                    // Restart the timer if there are still unacknowledged packets
+                    if (base < nextseqnum) {
                         timer.start();
+                    } else {
+                        timer.stop();  // Stop timer if all packets are acknowledged
                     }
                 }
             }
@@ -132,7 +129,7 @@ int main(int argc, char* argv[]) {
             }
 
             // If all data sent and acknowledged, exit loop
-            if (allSent && base == nextseqnum) {
+            if (nextseqnum == base && inputFile.eof()) {
                 allAcked = true;
             }
         }
