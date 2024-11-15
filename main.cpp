@@ -75,32 +75,32 @@ int main(int argc, char* argv[]) {
 
         while (!allAcked) {
             // 1. Send packets if there's space in the window and data to send
-            while ((nextseqnum < base + WINDOW_SIZE) && !allSent) {
+            while (((nextseqnum - base + WINDOW_SIZE) % WINDOW_SIZE) < WINDOW_SIZE && !allSent) {
                 datagramS packet{};
                 inputFile.read(packet.data, MAX_PAYLOAD_LENGTH);
                 packet.payloadLength = inputFile.gcount();
-                packet.seqNum = nextseqnum;
+                packet.seqNum = nextseqnum % WINDOW_SIZE; // Use modulo for wrapping
                 packet.checksum = computeChecksum(packet);
 
                 // Send packet if there's data to send
                 if (packet.payloadLength > 0) {
                     connection.udt_send(packet);
-                    sndpkt[nextseqnum % WINDOW_SIZE] = packet;
+                    sndpkt[packet.seqNum] = packet; // Store packet using wrapped seqNum
                     nextseqnum++;
                     DEBUG << "Sent packet with seqNum: " << packet.seqNum << ENDL;
                 } else {
                     allSent = true; // No more data to send, mark allSent
                     // Send an empty packet to signal end of transmission
                     packet.payloadLength = 0;
-                    packet.seqNum = nextseqnum;
+                    packet.seqNum = nextseqnum % WINDOW_SIZE;
                     packet.checksum = computeChecksum(packet);
                     connection.udt_send(packet);
-                    sndpkt[nextseqnum % WINDOW_SIZE] = packet;
+                    sndpkt[packet.seqNum] = packet;
                     nextseqnum++;
                 }
 
                 // Start the timer if it's the first unacknowledged packet
-                if (base == nextseqnum - 1) {
+                if (base == (nextseqnum - 1) % WINDOW_SIZE) {
                     timer.start();
                 }
             }
@@ -111,17 +111,17 @@ int main(int argc, char* argv[]) {
             if (bytesReceived > 0) {
                 // Validate checksum
                 if (validateChecksum(ackPacket)) {
-                    uint16_t ackNum = ackPacket.ackNum;
+                    uint16_t ackNum = ackPacket.ackNum % WINDOW_SIZE; // Use modulo for wrapping
                     DEBUG << "Received ACK for seqNum: " << ackNum << ENDL;
 
                     // Slide the window if the ackNum is within range
-                    if (ackNum >= base && ackNum < nextseqnum) {
-                        base = ackNum + 1;
+                    if (((ackNum - base + WINDOW_SIZE) % WINDOW_SIZE) < WINDOW_SIZE) {
+                        base = (ackNum + 1) % WINDOW_SIZE;
                         timer.start(); // Restart the timer for the new base
                     }
 
                     // If all data sent and acknowledged, we're done
-                    if (allSent && base == nextseqnum) {
+                    if (allSent && base == (nextseqnum % WINDOW_SIZE)) {
                         allAcked = true;
                     }
                 } else {
@@ -135,12 +135,13 @@ int main(int argc, char* argv[]) {
                 timer.start(); // Restart the timer
 
                 // Resend all packets in the window
-                for (uint16_t i = base; i < nextseqnum; ++i) {
-                    connection.udt_send(sndpkt[i % WINDOW_SIZE]);
-                    DEBUG << "Resent packet with seqNum: " << sndpkt[i % WINDOW_SIZE].seqNum << ENDL;
+                for (uint16_t i = base; i != nextseqnum; i = (i + 1) % WINDOW_SIZE) {
+                    connection.udt_send(sndpkt[i]);
+                    DEBUG << "Resent packet with seqNum: " << sndpkt[i].seqNum << ENDL;
                 }
             }
         }
+
 
         // Close the input file
         inputFile.close();
